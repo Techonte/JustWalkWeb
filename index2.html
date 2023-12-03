@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de LED</title>
+</head>
+<body>
+    <button id="toggleButton" onclick="toggleLED()">Toggle LED</button>
+
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th>Data from Arduino</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        let selectedPort = null;
+        let ledStatus = false; // Initial LED status
+
+        async function requestPort() {
+            if (selectedPort) {
+                return selectedPort;
+            }
+
+            try {
+                const port = await navigator.serial.requestPort();
+                selectedPort = port;
+                return port;
+            } catch (error) {
+                console.error(`Error requesting port:`, error);
+                return null;
+            }
+        }
+
+        async function toggleLED() {
+            ledStatus = !ledStatus; // Toggle LED status
+            const command = ledStatus ? 'ON' : 'OFF';
+            document.getElementById('toggleButton').innerText = `${command} LED`;
+
+            // Send command to Arduino
+            const port = await requestPort();
+            if (!port) {
+                return;
+            }
+
+            try {
+                await port.open({ baudRate: 9600 });
+
+                const writer = port.writable.getWriter();
+                await writer.write(new TextEncoder().encode(command));
+                writer.releaseLock();
+
+                await port.close();
+            } catch (error) {
+                console.error(`Something went wrong with "${command}":`, error);
+            }
+
+            // Read data from Arduino and update table
+            await readData();
+        }
+
+        async function readData() {
+            const port = await requestPort();
+            if (!port) {
+                return;
+            }
+
+            try {
+                await port.open({ baudRate: 9600 });
+
+                const reader = port.readable.getReader();
+                const data = await reader.read();
+
+                if (!data.done) {
+                    const newData = new TextDecoder().decode(data.value);
+                    updateTable(newData);
+                }
+
+                reader.releaseLock();
+                await port.close();
+            } catch (error) {
+                console.error('Error reading data:', error);
+            }
+        }
+
+        function updateTable(newData) {
+            const tableBody = document.querySelector('#dataTable tbody');
+            const newRow = tableBody.insertRow();
+            const cell = newRow.insertCell(0);
+            cell.textContent = newData;
+        }
+    </script>
+</body>
+</html>

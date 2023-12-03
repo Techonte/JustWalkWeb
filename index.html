@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de LED</title>
+</head>
+<body>
+    <button onclick="sendCommand('ON')">Activar LED</button>
+    <button onclick="sendCommand('OFF')">Apagar LED</button>
+
+    <script>
+        let selectedPort = null;
+
+        async function requestPort() {
+            if (selectedPort) {
+                return selectedPort;
+            }
+
+            try {
+                const port = await navigator.serial.requestPort();
+                selectedPort = port;
+                return port;
+            } catch (error) {
+                console.error(`Error requesting port:`, error);
+                return null;
+            }
+        }
+
+        async function sendCommand(command) {
+            const port = await requestPort();
+            if (!port) {
+                return;
+            }
+
+            try {
+                await port.open({ baudRate: 9600 });
+
+                // Enviar el comando al Arduino
+                const writer = port.writable.getWriter();
+                await writer.write(new TextEncoder().encode(command));
+                writer.releaseLock();
+
+                await port.close();
+            } catch (error) {
+                console.error(`Something went wrong with "${command}":`, error);
+            }
+        }
+    </script>
+</body>
+</html>
