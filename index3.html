@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de LED</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            text-align: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 10px;
+        }
+
+        li {
+            background-color: #f0f0f0;
+            margin: 5px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <button onclick="iniciarConexion()">Iniciar Conexión</button>
+    <button onclick="apagarLED()">Apagar LED</button>
+
+    <!-- Aquí creamos 10 <ul> con ids únicos -->
+    <ul id="codigo1"></ul>
+    <ul id="codigo2"></ul>
+    <ul id="codigo3"></ul>
+    <ul id="codigo4"></ul>
+    <ul id="codigo5"></ul>
+    <ul id="codigo6"></ul>
+    <ul id="codigo7"></ul>
+    <ul id="codigo8"></ul>
+    <ul id="codigo9"></ul>
+    <ul id="codigo10"></ul>
+
+    <script>
+        let port;
+        let isConexionIniciada = false;
+
+        async function enviarComando(comando) {
+            try {
+                if (!port) {
+                    throw new Error('El puerto serial no está abierto. Inicia la conexión primero.');
+                }
+
+                const writer = port.writable.getWriter();
+                await writer.write(new TextEncoder().encode(comando));
+                writer.releaseLock();
+            } catch (error) {
+                console.error(`Error al enviar comando "${comando}":`, error);
+            }
+        }
+
+        async function iniciarConexion() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+
+                // Limpiar los códigos anteriores cada vez que se inicia la conexión
+                for (let i = 1; i <= 10; i++) {
+                    const ulId = `codigo${i}`;
+                    const ulElement = document.getElementById(ulId);
+                    ulElement.innerHTML = '';
+                }
+
+                // Iniciar temporizador para enviar automáticamente el comando cada 5 segundos
+                if (!isConexionIniciada) {
+                    isConexionIniciada = true;
+                    setInterval(async () => {
+                        // Limpiar los códigos anteriores antes de enviar el nuevo comando
+                        for (let i = 1; i <= 10; i++) {
+                            const ulId = `codigo${i}`;
+                            const ulElement = document.getElementById(ulId);
+                            ulElement.innerHTML = '';
+                        }
+                        
+                        await enviarComando("activarLED");
+                    }, 5000);
+                }
+                
+                // Comenzar la lectura desde el puerto serial
+                await main();
+            } catch (error) {
+                console.error('Error al iniciar la conexión:', error);
+            }
+        }
+
+        async function apagarLED() {
+            try {
+                await enviarComando("apagarLED");
+            } catch (error) {
+                console.error('Error al apagar LED:', error);
+            }
+        }
+
+        async function manejarCodigos(codigos) {
+            for (let i = 0; i < codigos.length; i++) {
+                const codigo = codigos[i];
+                const ulId = `codigo${i + 1}`;
+                const ulElement = document.getElementById(ulId);
+
+                const listItem = document.createElement("li");
+                listItem.textContent = `Código: ${codigo}`;
+                ulElement.appendChild(listItem);
+            }
+        }
+
+        async function main() {
+            try {
+                if (!port) {
+                    throw new Error('El puerto serial no está abierto. Inicia la conexión primero.');
+                }
+
+                const reader = port.readable.getReader();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    const text = new TextDecoder().decode(value);
+                    const codigos = text.split('\n').filter(Boolean);
+                    manejarCodigos(codigos);
+                }
+            } catch (error) {
+                console.error('Error al configurar el puerto serial:', error);
+            }
+        }
+    </script>
+</body>
+</html>
