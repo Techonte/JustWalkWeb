@@ -24,7 +24,7 @@
             margin: 10px;
         }
 
-        li {
+        th {
             background-color: #f0f0f0;
             margin: 5px;
             padding: 10px;
@@ -33,111 +33,96 @@
     </style>
 </head>
 <body>
-    <button onclick="iniciarConexion()">Iniciar Conexión</button>
-    <button onclick="apagarLED()">Apagar LED</button>
+    <button id="toggleReadingButton" onclick="toggleReading()">Start reading tags</button>
 
-    <!-- Aquí creamos 10 <ul> con ids únicos -->
-    <ul id="codigo1"></ul>
-    <ul id="codigo2"></ul>
-    <ul id="codigo3"></ul>
-    <ul id="codigo4"></ul>
-    <ul id="codigo5"></ul>
-    <ul id="codigo6"></ul>
-    <ul id="codigo7"></ul>
-    <ul id="codigo8"></ul>
-    <ul id="codigo9"></ul>
-    <ul id="codigo10"></ul>
+    <!-- Create a table with an id for easy reference -->
+    <table id="productIDsTable" border="1">
+        <thead>
+            <tr>
+                <th>Product ID</th>
+                <th>Product Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Table body will be populated dynamically -->
+        </tbody>
+    </table>
 
     <script>
-        let port;
-        let isConexionIniciada = false;
+        var portSelected = null;
+        var tableBody = document.getElementById('productIDsTable').getElementsByTagName('tbody')[0];
+        var reader = null;
+        var isNanoReading = false;
+        let accumulatedData = '';
 
-        async function enviarComando(comando) {
-            try {
-                if (!port) {
-                    throw new Error('El puerto serial no está abierto. Inicia la conexión primero.');
-                }
-
-                const writer = port.writable.getWriter();
-                await writer.write(new TextEncoder().encode(comando));
-                writer.releaseLock();
-            } catch (error) {
-                console.error(`Error al enviar comando "${comando}":`, error);
+        function toggleReading() {
+            if (isNanoReading) {
+                stopReading();
+            } else {
+                startReading();
             }
         }
 
-        async function iniciarConexion() {
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 9600 });
+        function startReading() {
+            tableBody.innerHTML = '';
+            document.getElementById('toggleReadingButton').innerText = 'Stop reading tags';
+            startReadingTags();
+        }
 
-                // Limpiar los códigos anteriores cada vez que se inicia la conexión
-                for (let i = 1; i <= 10; i++) {
-                    const ulId = `codigo${i}`;
-                    const ulElement = document.getElementById(ulId);
-                    ulElement.innerHTML = '';
+        function stopReading() {
+            document.getElementById('toggleReadingButton').innerText = 'Start reading tags';
+            isNanoReading = false;
+        }
+
+        async function startReadingTags() {
+            try {
+                if (!portSelected) {
+                    portSelected = await navigator.serial.requestPort();
+                    await portSelected.open({ baudRate: 9600 });
+                    // Read data IDs from Arduino
+                    reader = portSelected.readable.getReader();
                 }
 
-                // Iniciar temporizador para enviar automáticamente el comando cada 5 segundos
-                if (!isConexionIniciada) {
-                    isConexionIniciada = true;
-                    setInterval(async () => {
-                        // Limpiar los códigos anteriores antes de enviar el nuevo comando
-                        for (let i = 1; i <= 10; i++) {
-                            const ulId = `codigo${i}`;
-                            const ulElement = document.getElementById(ulId);
-                            ulElement.innerHTML = '';
+                 // Send instruction to Arduino to initiate reading tags
+                const writer = portSelected.writable.getWriter();
+                await writer.write(new TextEncoder().encode('StartReading'));
+                await writer.close(); // Use close instead of releaseLock
+                isNanoReading = true;
+                accumulatedData = '';
+
+                while (isNanoReading) {
+                    const data = await reader.read();
+                    const newData = new TextDecoder().decode(data.value);
+                    accumulatedData += newData;
+                    // Check if the accumulated data contains a newline
+                    if (accumulatedData.includes('\n')) {
+                        const lines = accumulatedData.split('\n');
+                        for (const line of lines) {
+                            if (line.trim() !== '') {
+                                updateTable(line);
+                            }
                         }
-                        
-                        await enviarComando("activarLED");
-                    }, 5000);
+                    }
                 }
-                
-                // Comenzar la lectura desde el puerto serial
-                await main();
+                // Close the port at the end
+                await writer.write(new TextEncoder().encode('STOP'));
+                await writer.close(); // Use close instead of releaseLock
+                await reader.cancel();
+                await reader.releaseLock(); // Release reader lock explicitly
+                await portSelected.close();
+                document.getElementById('toggleReadingButton').innerText = 'Start reading tags';
             } catch (error) {
-                console.error('Error al iniciar la conexión:', error);
+                console.error('Port or data cannot be read:', error);
             }
         }
 
-        async function apagarLED() {
-            try {
-                await enviarComando("apagarLED");
-            } catch (error) {
-                console.error('Error al apagar LED:', error);
-            }
-        }
+        async function updateTable(newData) {
+            const newRow = tableBody.insertRow();
+            const productIDcell = newRow.insertCell(0);
+            const productDescriptionCell = newRow.insertCell(1);
 
-        async function manejarCodigos(codigos) {
-            for (let i = 0; i < codigos.length; i++) {
-                const codigo = codigos[i];
-                const ulId = `codigo${i + 1}`;
-                const ulElement = document.getElementById(ulId);
-
-                const listItem = document.createElement("li");
-                listItem.textContent = `Código: ${codigo}`;
-                ulElement.appendChild(listItem);
-            }
-        }
-
-        async function main() {
-            try {
-                if (!port) {
-                    throw new Error('El puerto serial no está abierto. Inicia la conexión primero.');
-                }
-
-                const reader = port.readable.getReader();
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-
-                    const text = new TextDecoder().decode(value);
-                    const codigos = text.split('\n').filter(Boolean);
-                    manejarCodigos(codigos);
-                }
-            } catch (error) {
-                console.error('Error al configurar el puerto serial:', error);
-            }
+            productIDcell.innerHTML = newData;
+            productDescriptionCell.innerHTML = 'New product';
         }
     </script>
 </body>
